@@ -1,4 +1,4 @@
-Euclidean vs. Graph-Based Framings for BLI
+Euclidean vs. Graph-Based Framings for Bilingual Lexicon Induction
 ======================
 
 This is an implementation of the experiments and combination system presented
