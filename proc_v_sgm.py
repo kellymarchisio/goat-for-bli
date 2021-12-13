@@ -133,7 +133,10 @@ def eval(hypotheses, test_set):
     print('\tLength of hypotheses: {0}\n\tLength of test set: '
             '{1}'.format(len(hypotheses), len(test_set)), flush=True)
     matches = set(test_set).intersection(hypotheses)
-    precision = round((float(len(matches))/len(hypotheses)*100), 4)
+    if hypotheses:
+        precision = round((float(len(matches))/len(hypotheses)*100), 4)
+    else:
+        precision = None
     recall = round((float(len(matches))/len(test_set)*100), 4)
     return matches, precision, recall
 
