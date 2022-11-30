@@ -3,9 +3,9 @@
 ## Matrix utility operations
 ##
 ## Written by Kelly Marchisio for use on the CLSP grid, Oct 2020.
-## Note: the `read` function is mostly copied from: 
+## Note: the `read` function is mostly copied from:
 ##      https://github.com/artetxem/vecmap/blob/master/embeddings.py
-## 
+##
 ###############################################################################
 import numpy as np
 import random

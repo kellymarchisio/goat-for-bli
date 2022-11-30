@@ -21,7 +21,7 @@ echo CUDA_VISIBLE_DEVICES is $CUDA_VISIBLE_DEVICES
 if [ -z "$SRC" ] || [ -z "$TRG" ]; then
 	echo Must specify source and target languages. Exiting. && exit
 fi
-AVAILABLE_FUNCTIONS=(proc sgm)
+AVAILABLE_FUNCTIONS=(proc sgm goat)
 if [[ ! "${AVAILABLE_FUNCTIONS[@]}" =~ "${FUNCTION}" ]]; then
 	echo Must choose proc or sgm for function. Exiting. && exit
 fi
@@ -43,6 +43,7 @@ TRG_EMBS=`pwd`/embs/wiki.$TRG.vec
 NEW_NSEEDS_PER_ROUND=-1
 MIN_PROB=0.0
 NORM=(unit center unit)
+INIT=barycenter
 ACTIVE_LEARNING=
 
 ################################################################################
@@ -57,6 +58,12 @@ elif [ $STAGE == 'active-learn' ]; then
 elif [ $STAGE == 'stoch-add' ]; then
 	NEW_NSEEDS_PER_ROUND=(`seq $NSEEDS $STOCH_ADD_INTERVAL $MAX_SEEDS`)
 	ITERS=${#NEW_NSEEDS_PER_ROUND[@]}
+	if [ $FUNCTION == 'sgm' ]; then
+		# This isn't strictly necessary, but in the 2022 GOAT paper appendix
+		# table A5, we do Iterative SGM using the parameters from Marchisio et
+		# al., 2021, who use randomized initialization for SGM (the default)
+		INIT=randomized
+	fi
 fi
 
 ################################################################################
@@ -67,5 +74,5 @@ python proc_v_sgm.py --src-embs $SRC_EMBS --trg-embs $TRG_EMBS \
 	--norm ${NORM[@]} --function $FUNCTION --pairs $PAIRS --n-seeds $NSEEDS \
 	--max-embs $MAX_EMBS --min-prob $MIN_PROB --proc-iters $ITERS \
 	--softsgm-iters 1 --diff-seeds-for-rev \
-	--iterative-softsgm-iters $ITERS $ACTIVE_LEARNING \
+	--iterative-softsgm-iters $ITERS $ACTIVE_LEARNING --init $INIT \
 	--new-nseeds-per-round ${NEW_NSEEDS_PER_ROUND[@]} > $OUTDIR/run.out

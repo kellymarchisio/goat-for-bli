@@ -1,16 +1,16 @@
 ###############################################################################
 #
-#   Implementations of Iterative Procrustes & Seeded Graph Matching
-# 
-#   Written by Kelly Marchisio, 2020-2021.
-# 
+#   Implementations of Iterative Procrustes, Seeded Graph Matching, and GOAT.
+#
+#   Written by Kelly Marchisio, 2020-2022.
+#
 ###############################################################################
 
 import argparse
 import numpy as np
 import cupy as cp
 import random
-from utils import csls 
+from utils import csls
 from utils import matops
 from scipy import sparse
 from scipy.linalg import orthogonal_procrustes
@@ -22,7 +22,7 @@ import sys
 
 def process_dict_pairs(pair_file):
     '''Parses a dictionary pairs file.
-        
+
             Pairs as list of (srcwd, trgwd) tuples
             L1 and L2 vocabularies as sets.
     '''
@@ -41,14 +41,14 @@ def process_dict_pairs(pair_file):
 
 
 def pairs_to_embpos(pairs, src_word2ind, trg_word2ind):
-    '''Translates a list of (srcwd, trgwd) tuples to a list of 
+    '''Translates a list of (srcwd, trgwd) tuples to a list of
         (src_pos, trg_pos) from the embedding space.
 
-        Args: 
+        Args:
             pairs: list of (srcwd, trgwd) tuples
             src_word2ind: source word to index dictionary.
             trg_word2ind: target word to index dictionary.
-        
+
         Returns:
             List of (src_pos, trg_pos) from the embedding space.
 
@@ -58,14 +58,14 @@ def pairs_to_embpos(pairs, src_word2ind, trg_word2ind):
 
 def load_embs_and_wordpairs(args):
     # Loads embeddings and input word pairs (vocabulary). Returns word pairs,
-    # source and target embeddings and word2ind dictionaries. 
+    # source and target embeddings and word2ind dictionaries.
     print('Loading embeddings and dictionary pairs...')
     word_pairs, src_words, trg_words = process_dict_pairs(args.pairs)
-    
+
     available_word_pairs = []
     # Read once to find available src/trg words from emb spaces.
     with open(args.src_embs) as src_embs_file:
-        with open(args.trg_embs) as trg_embs_file: 
+        with open(args.trg_embs) as trg_embs_file:
             available_src_words, _ = matops.read(
                     src_embs_file, args.max_embs, src_words)
             available_trg_words, _ = matops.read(
@@ -78,21 +78,21 @@ def load_embs_and_wordpairs(args):
 
 
     with open(args.src_embs) as src_embs_file:
-        with open(args.trg_embs) as trg_embs_file: 
+        with open(args.trg_embs) as trg_embs_file:
             # Re-read embs with only vocab where both sides of pair are present.
             src_words_in_emb_order, src_embs = matops.read(
                     src_embs_file, args.max_embs, src_words_to_use)
             trg_words_in_emb_order, trg_embs = matops.read(
                     trg_embs_file, args.max_embs, trg_words_to_use)
 
-            # These lines for *_word2ind copied from vecmap/.py 
+            # These lines for *_word2ind copied from vecmap/.py
             src_word2ind = {word: i for i, word in enumerate(src_words_in_emb_order)}
             trg_word2ind = {word: i for i, word in enumerate(trg_words_in_emb_order)}
             src_ind2word = {i: word for i, word in enumerate(src_words_in_emb_order)}
             trg_ind2word = {i: word for i, word in enumerate(trg_words_in_emb_order)}
 
             print('Done loading embeddings and dictionary pairs.')
-            return (available_word_pairs, src_embs, src_word2ind, src_ind2word, 
+            return (available_word_pairs, src_embs, src_word2ind, src_ind2word,
                     trg_embs, trg_word2ind, trg_ind2word, oov_word_pairs)
 
 
@@ -115,7 +115,7 @@ def create_train_dev_split(pairs, n_seeds, src_word2ind, trg_word2ind,
 def calculate_csls_scores(x, y, topk=-1):
     # Returns a sparse matrix of topk CSLS scores.
     csls_generator = csls.calculate_csls_scores(x, y, topk=topk)
-    return sparse.vstack(csls_generator) 
+    return sparse.vstack(csls_generator)
 
 
 def solve_procrustes(x, y):
@@ -141,18 +141,18 @@ def eval(hypotheses, test_set):
     return matches, precision, recall
 
 
-def iterative_procrustes_w_csls(x, y, input_x_seed_inds=[], input_y_seed_inds=[], 
+def iterative_procrustes_w_csls(x, y, input_x_seed_inds=[], input_y_seed_inds=[],
         gold_x_seed_inds=[], gold_y_seed_inds=[], val_set=None,
         max_seeds_to_add=-1, curr_i=1, total_i=10, diff_seeds_for_rev=False,
         k=1, active_learning=False, truth_for_active_learning=None):
     '''Run Iterative Procrustes.
-        
-        Dictionaries are induced as the nearest neighbor of each word in x 
-        according to CSLS. The seed set for subsequent rounds is the 
+
+        Dictionaries are induced as the nearest neighbor of each word in x
+        according to CSLS. The seed set for subsequent rounds is the
         intersection of the dictionaries induced from both directions.
 
         Args:
-            x: source embedding space. 
+            x: source embedding space.
             y: target embedding space.
             input_x_seed_inds: seed indicies to use in x space.
             input_y_seed_inds: seed indicies to use in y space.
@@ -164,8 +164,8 @@ def iterative_procrustes_w_csls(x, y, input_x_seed_inds=[], input_y_seed_inds=[]
             k: how many hypotheses to return.
             active_learning: If True, only hypotheses that are correct (either
                 in the train or dev set) used as seeds for next iteration.
-            truth_for_active_learning: True pairs to be be compared with for 
-                active learning. If a hypothesis is in this set, use it. 
+            truth_for_active_learning: True pairs to be be compared with for
+                active learning. If a hypothesis is in this set, use it.
 
         Returns:
             Hypothesized matches induced in fwd direction for all rows in x.
@@ -180,10 +180,10 @@ def iterative_procrustes_w_csls(x, y, input_x_seed_inds=[], input_y_seed_inds=[]
     print('\tNum gold seeds:', len(gold_x_seed_inds))
 
     x_seed_inds, y_seed_inds = unzip_pairs(get_seeds(input_x_seed_inds, input_y_seed_inds,
-            gold_x_seed_inds, gold_y_seed_inds, max_seeds_to_add, curr_i, 
+            gold_x_seed_inds, gold_y_seed_inds, max_seeds_to_add, curr_i,
             total_i, True))
     print('\tNum combined input seeds:', len(x_seed_inds))
-    
+
     w = solve_procrustes(x[x_seed_inds], y[y_seed_inds])
     csls_scores_sparse = calculate_csls_scores(x @ w, y, topk=k)
     x_hyp_pos, y_hyp_pos, val = sparse.find(csls_scores_sparse)
@@ -191,7 +191,7 @@ def iterative_procrustes_w_csls(x, y, input_x_seed_inds=[], input_y_seed_inds=[]
     if diff_seeds_for_rev:
         print('Getting different seeds for reverse direction.')
         x_seed_inds, y_seed_inds = unzip_pairs(get_seeds(input_x_seed_inds, input_y_seed_inds,
-                gold_x_seed_inds, gold_y_seed_inds, max_seeds_to_add, curr_i, 
+                gold_x_seed_inds, gold_y_seed_inds, max_seeds_to_add, curr_i,
                 total_i, True))
     w_rev = solve_procrustes(y[y_seed_inds], x[x_seed_inds])
     csls_scores_sparse_rev = calculate_csls_scores(y @ w_rev, x, topk=k)
@@ -200,7 +200,7 @@ def iterative_procrustes_w_csls(x, y, input_x_seed_inds=[], input_y_seed_inds=[]
     hyps = set(zip(x_hyp_pos, y_hyp_pos))
     hyps_rev = set(zip(x_hyp_pos_rev, y_hyp_pos_rev))
     hyps_int = symmetrize(hyps, hyps_rev, 'intersection')
-    
+
     if val_set:
         eval_symm(val_set, hyps, hyps_rev, hyps_int)
 
@@ -214,11 +214,11 @@ def iterative_procrustes_w_csls(x, y, input_x_seed_inds=[], input_y_seed_inds=[]
         joint_x_hyp_pos, joint_y_hyp_pos = unzip_pairs(
                 correct_hyps.union(correct_hyps_rev))
     else:
-        joint_x_hyp_pos, joint_y_hyp_pos = unzip_pairs(hyps_int) 
+        joint_x_hyp_pos, joint_y_hyp_pos = unzip_pairs(hyps_int)
     return iterative_procrustes_w_csls(x, y, joint_x_hyp_pos, joint_y_hyp_pos,
-            gold_x_seed_inds, gold_y_seed_inds, val_set, max_seeds_to_add, 
+            gold_x_seed_inds, gold_y_seed_inds, val_set, max_seeds_to_add,
             curr_i, total_i, diff_seeds_for_rev, k, active_learning,
-            truth_for_active_learning) 
+            truth_for_active_learning)
 
 
 def eval_symm(val_set, hyps, hyps_rev, hyps_int, hyps_gdf=None):
@@ -228,14 +228,14 @@ def eval_symm(val_set, hyps, hyps_rev, hyps_int, hyps_gdf=None):
             hyps: forward hypotheses.
             hyps_rev: reverse hypotheses.
             hyps_int: joint hypotheses (intersection of fwd & rev).
-            hyps_gdf: fwd & rev hypotheses symmetrized with grow-diag-final. 
+            hyps_gdf: fwd & rev hypotheses symmetrized with grow-diag-final.
             val_set: validation set as set of (x1, y1) tuples.
 
         Returns:
             Prints precision & recall for all sets of hypotheses.
             Returns (True matches, precision, recall) tuple for each set.
     '''
-    print('\nRunning Evaluation....') 
+    print('\nRunning Evaluation....')
     dev_src_inds, dev_trg_inds = unzip_pairs(val_set)
 
     print('\nForward:')
@@ -254,15 +254,17 @@ def eval_symm(val_set, hyps, hyps_rev, hyps_int, hyps_gdf=None):
     dev_hyps_int = dev_hyps.intersection(dev_hyps_rev)
     matches_int, prec_int, recall_int = eval(dev_hyps_int, val_set)
     print('\tPairs matched: {0} \n\t(Precision; {1}%) (Recall: {2}%)'
-            .format(len(matches_int), prec_int, recall_int), 
+            .format(len(matches_int), prec_int, recall_int),
             flush=True)
 
-    return ((matches, prec, recall), (matches_rev, prec_rev, recall_rev), 
+    return ((matches, prec, recall), (matches_rev, prec_rev, recall_rev),
             (matches_int, prec_int, recall_int))
 
 
 def unzip_pairs(pairs):
     '''Unzips a set of (x, y) pairs to lists of [x1, ..., xn], [y1, ..., yn]'''
+    if not pairs:
+        return [], []
     x_list = list(list(zip(*pairs))[0])
     y_list = list(list(zip(*pairs))[1])
     return x_list, y_list
@@ -272,7 +274,8 @@ def iterative_softsgm(x_sim, y_sim, input_x_seed_inds=[], input_y_seed_inds=[],
         gold_x_seed_inds=[], gold_y_seed_inds=[],
         softsgm_iters=10, k=1, minprob=0.0, val_set=None, max_seeds_to_add=-1,
         curr_i=1, total_i=10, diff_seeds_for_rev=False, run_reverse=False,
-        active_learning=False, truth_for_active_learning=None):
+        active_learning=False, truth_for_active_learning=None, function='sgm',
+        opts={}):
     '''Iteratively runs the SoftSGM (Algorithm 3) from Fishkind et al. (2019),
         feeding in intersection of hypotheses from both directions as seeds for
         the next round. Internally, runs SoftSGM with iters iterations and
@@ -290,16 +293,18 @@ def iterative_softsgm(x_sim, y_sim, input_x_seed_inds=[], input_y_seed_inds=[],
             k: how many hypotheses to take for each source word from prob. dist
                 returned from sgm.softsgm.
             minprob: min probability necessary for hypothesis to be considered.
-            max_seeds_to_add: max # of seeds to add per round. Can be an 
-                integer if same for all rounds or list if different. -1 == all. 
+            max_seeds_to_add: max # of seeds to add per round. Can be an
+                integer if same for all rounds or list if different. -1 == all.
             val_set: validation set as set of (x1, y1) tuples.
             curr_i: current iteration number.
             total_i: total number of iterations that will run.
             run_reverse: If total_i = 1, still runs the reverse direction.
             active_learning: If True, only hypotheses that are correct (either
                 in the train or dev set) used as seeds for next iteration.
-            truth_for_active_learning: True pairs to be be compared with for 
-                active learning. If a hypothesis is in this set, use it. 
+            truth_for_active_learning: True pairs to be be compared with for
+                active learning. If a hypothesis is in this set, use it.
+            function: sgm for vanilla SGM (Fishkind et al), goat for GOAT
+                (https://arxiv.org/abs/2111.05366)
 
         Returns:
             Hypothesized matches induced in fwd direction for all rows in x.
@@ -311,21 +316,21 @@ def iterative_softsgm(x_sim, y_sim, input_x_seed_inds=[], input_y_seed_inds=[],
     print('\nRound {0} of Iterative SoftSGM\n'.format(curr_i))
     print('----------------------------------')
     x_seed_inds, y_seed_inds = unzip_pairs(get_seeds(input_x_seed_inds, input_y_seed_inds,
-            gold_x_seed_inds, gold_y_seed_inds, max_seeds_to_add, curr_i, 
+            gold_x_seed_inds, gold_y_seed_inds, max_seeds_to_add, curr_i,
             total_i, True))
 
     print('Running SoftSGM Forward', flush=True)
     hyps = run_softsgm_topk(x_sim, y_sim, x_seed_inds, y_seed_inds,
-            softsgm_iters, k, minprob)
+            softsgm_iters, k, minprob, val_set, function, opts)
     if total_i > 1 or run_reverse:
         print('Running SoftSGM Reverse', flush=True)
         if diff_seeds_for_rev:
             print('Getting different seeds for reverse direction.')
             x_seed_inds, y_seed_inds = unzip_pairs(get_seeds(input_x_seed_inds,
-                input_y_seed_inds, gold_x_seed_inds, gold_y_seed_inds, 
+                input_y_seed_inds, gold_x_seed_inds, gold_y_seed_inds,
                 max_seeds_to_add, curr_i, total_i, True))
         hyps_rev = run_softsgm_topk(y_sim, x_sim, y_seed_inds, x_seed_inds,
-                softsgm_iters, k, minprob)
+                softsgm_iters, k, minprob, val_set, function, opts)
         hyps_rev = {(i[1], i[0]) for i in hyps_rev}
         hyps_int = symmetrize(hyps, hyps_rev, 'intersection')
 
@@ -342,7 +347,7 @@ def iterative_softsgm(x_sim, y_sim, input_x_seed_inds=[], input_y_seed_inds=[],
             print('\tPrecision: {0}%  Recall {1}%'.format(precision, recall))
 
     if curr_i == total_i:
-        return hyps, hyps_rev, hyps_int 
+        return hyps, hyps_rev, hyps_int
 
     curr_i += 1
     if active_learning:
@@ -351,11 +356,11 @@ def iterative_softsgm(x_sim, y_sim, input_x_seed_inds=[], input_y_seed_inds=[],
         joint_x_hyp_pos, joint_y_hyp_pos = unzip_pairs(
                 correct_hyps.union(correct_hyps_rev))
     else:
-        joint_x_hyp_pos, joint_y_hyp_pos = unzip_pairs(hyps_int) 
+        joint_x_hyp_pos, joint_y_hyp_pos = unzip_pairs(hyps_int)
     return iterative_softsgm(x_sim, y_sim, joint_x_hyp_pos, joint_y_hyp_pos,
-            gold_x_seed_inds, gold_y_seed_inds, softsgm_iters, k, minprob, val_set, 
+            gold_x_seed_inds, gold_y_seed_inds, softsgm_iters, k, minprob, val_set,
             max_seeds_to_add, curr_i, total_i, diff_seeds_for_rev, run_reverse,
-            active_learning, truth_for_active_learning) 
+            active_learning, truth_for_active_learning, function, opts)
 
 
 def symmetrize(hyps, hyps_rev, heuristic):
@@ -365,7 +370,7 @@ def symmetrize(hyps, hyps_rev, heuristic):
         return hyps.intersection(hyps_rev)
 
 
-def get_seeds(x_seed_inds, y_seed_inds, gold_x_seed_inds, gold_y_seed_inds, 
+def get_seeds(x_seed_inds, y_seed_inds, gold_x_seed_inds, gold_y_seed_inds,
         max_seeds_to_add, i, total_i, always_use_gold=True):
     '''Get correct number of seeds for a given round.
 
@@ -374,11 +379,11 @@ def get_seeds(x_seed_inds, y_seed_inds, gold_x_seed_inds, gold_y_seed_inds,
             y_seed_inds: indices for seeds for y space.
             gold_x_seed_inds: gold seed indicies in x space.
             gold_y_seed_inds: gold seed indicies in y space.
-            max_seeds_to_add: max # of seeds to add per round. Can be an 
-                integer if same for all rounds or list if different. -1 == all. 
+            max_seeds_to_add: max # of seeds to add per round. Can be an
+                integer if same for all rounds or list if different. -1 == all.
             i: index to pull number of seeds from.
             total_i: total number of rounds algorithm will go through.
-            always_use_gold: whether or not to always use gold seeds. 
+            always_use_gold: whether or not to always use gold seeds.
 
         Returns:
             x_seed_inds: indices for seeds for x space.
@@ -390,10 +395,10 @@ def get_seeds(x_seed_inds, y_seed_inds, gold_x_seed_inds, gold_y_seed_inds,
     random.shuffle(xy_pairs)
     # Filter out potential x,y pairs where either x or y is in the gold seed
     # indices (we know this cannot be correct, and do not want duplicate
-    # src/trg words in our seed set). 
+    # src/trg words in our seed set).
     xy_nongold_pairs = list(filter(
         lambda pair: pair[0] not in set(gold_x_seed_inds) and
-                     pair[1] not in set(gold_y_seed_inds), 
+                     pair[1] not in set(gold_y_seed_inds),
         xy_pairs))
 
     gold_pairs = set(zip(gold_x_seed_inds, gold_y_seed_inds))
@@ -407,7 +412,7 @@ def get_seeds(x_seed_inds, y_seed_inds, gold_x_seed_inds, gold_y_seed_inds,
     elif isinstance(max_seeds_to_add, int) and max_seeds_to_add >= 0:
         num_seeds_to_add = max_seeds_to_add
     elif isinstance(max_seeds_to_add, int) and max_seeds_to_add < 0:
-        num_seeds_to_add = None # Return all seeds. 
+        num_seeds_to_add = None # Return all seeds.
     else:
         if len(max_seeds_to_add) == 1:
             num_seeds_to_add = max_seeds_to_add[0]
@@ -419,13 +424,13 @@ def get_seeds(x_seed_inds, y_seed_inds, gold_x_seed_inds, gold_y_seed_inds,
     pairs = pairs[:num_seeds_to_add]
     print('\t# of seeds chosen for round {0}:'.format(i),
             len(pairs))
-    return pairs 
+    return pairs
 
 
-def run_softsgm_topk(x_sim, y_sim, x_seed_inds=[], y_seed_inds=[], iters=1, 
-        k=1, minprob=0.0, val_set=None):
-    '''Runs SoftSGM and returns topk hyps over minprob per source word in x_sim. 
-        
+def run_softsgm_topk(x_sim, y_sim, x_seed_inds=[], y_seed_inds=[], iters=1,
+        k=1, minprob=0.0, val_set=None, function='sgm', opts={}):
+    '''Runs SoftSGM and returns topk hyps over minprob per source word in x_sim.
+
         Args:
             x_sim: normalized embeddings as a distance (similarity) matrix.
             y_sim: normalized embeddings as a distance (similarity) matrix.
@@ -436,20 +441,22 @@ def run_softsgm_topk(x_sim, y_sim, x_seed_inds=[], y_seed_inds=[], iters=1,
                 returned from sgm.softsgm.
             minprob: min probability necessary for hypothesis to be considered.
             val_set: validation set as set of (x1, y1) tuples.
+            function: sgm for vanilla SGM (Fishkind et al), goat for GOAT
+                (https://arxiv.org/abs/2111.05366)
         Returns:
             topk hypotheses over a minimum probability per source word in x, as
-                list of (src, trg) tuples. 
+                list of (src, trg) tuples.
     '''
     print('Running SoftSGM Topk.')
-    hyp_probdist, all_hyps = sgm.softsgm(x_sim, y_sim, x_seed_inds, 
-            y_seed_inds, iters)
+    hyp_probdist, all_hyps = sgm.softsgm(x_sim, y_sim, x_seed_inds,
+            y_seed_inds, iters, function, opts)
     hyps = get_topk_hypotheses_from_probdist(hyp_probdist, k, minprob)
     if val_set:
         dev_src_inds, _ = unzip_pairs(val_set)
         dev_hyps = [hyp for hyp in hyps if hyp[0] in dev_src_inds]
         matches, precision, recall = eval(dev_hyps, val_set)
         print('\tPrecision: {0}%  Recall {1}%'.format(precision, recall))
-    return hyps 
+    return hyps
 
 
 def get_topk_hypotheses_from_probdist(hyp_probdist, k=1, minprob=0.0):
@@ -459,7 +466,7 @@ def get_topk_hypotheses_from_probdist(hyp_probdist, k=1, minprob=0.0):
     nonzero_indices = np.nonzero(hyp_probdist_topk_over_minprob)
     hyp_src_inds = nonzero_indices[0].tolist()
     hyp_trg_inds = nonzero_indices[1].tolist()
-    hyps = set(zip(hyp_src_inds, hyp_trg_inds)) 
+    hyps = set(zip(hyp_src_inds, hyp_trg_inds))
     return hyps
 
 
@@ -468,20 +475,21 @@ def main(args):
     (word_pairs, src_embs, src_word2ind, src_ind2word, trg_embs, trg_word2ind,
             trg_ind2word, oov_word_pairs) = load_embs_and_wordpairs(args)
     print('OOV Word Pairs:', oov_word_pairs)
-    _, (train_inds, dev_inds) = create_train_dev_split(word_pairs, 
+    _, (train_inds, dev_inds) = create_train_dev_split(word_pairs,
             args.n_seeds, src_word2ind, trg_word2ind, args.randomize_seeds)
     gold_src_train_inds, gold_trg_train_inds = unzip_pairs(train_inds)
     src_dev_inds, trg_dev_inds = unzip_pairs(dev_inds)
 
-    
+
     # Normalize embeddings in-place.
     print('Normalizing embeddings...')
-    embeddings.normalize(src_embs, args.norm) 
-    embeddings.normalize(trg_embs, args.norm) 
+    embeddings.normalize(src_embs, args.norm)
+    embeddings.normalize(trg_embs, args.norm)
     print('Done normalizing embeddings.')
 
-    if args.function == 'sgm':
-        print('Running SGM') 
+    if args.function == 'sgm' or args.function == 'goat':
+        print('Running Graph Matching:', args.function)
+        print('args.init', args.init)
         print('args.softsgm_iters:', args.softsgm_iters)
         print('args.iterative_softsgm_iters:', args.iterative_softsgm_iters,
                 flush=True)
@@ -489,15 +497,27 @@ def main(args):
         # Make similarity matrices.
         xxT = src_embs @ src_embs.T
         yyT = trg_embs @ trg_embs.T
+        if args.no_selfloop:
+            print('Removing self-loops in graph...')
+            xxT[np.arange(len(xxT)), np.arange(len(xxT))] = 0
+            yyT[np.arange(len(yyT)), np.arange(len(yyT))] = 0
+            print('Done removing self-loops in graph...')
 
+        # shuffle_input=True, maximize=True is default in SGM in graspologic
+        #   when we pass through gmp.GraphMatch.
+        # shuffle_input=True, maximize=True are NOT default in GOAT codebase,
+        #   so we set them here. -- "to match default hyperparameters for SGM
+        #   in graspologic, we ste shuffle_input=True
+        opts = dict(shuffle_input=True, maximize=True, P0=args.init)
         hyps, _, _ = iterative_softsgm(xxT, yyT, gold_src_train_inds,
                 gold_trg_train_inds, gold_src_train_inds, gold_trg_train_inds,
                 args.softsgm_iters, args.k, args.min_prob, dev_inds,
-                args.new_nseeds_per_round, curr_i=1, 
+                args.new_nseeds_per_round, curr_i=1,
                 total_i=args.iterative_softsgm_iters,
                 diff_seeds_for_rev=args.diff_seeds_for_rev,
-                active_learning=args.active_learning, 
-                truth_for_active_learning=set(train_inds + dev_inds))
+                active_learning=args.active_learning,
+                truth_for_active_learning=set(train_inds + dev_inds),
+                function=args.function, opts=opts)
 
 
     if args.function == 'proc':
@@ -508,7 +528,7 @@ def main(args):
                 gold_trg_train_inds, dev_inds, args.new_nseeds_per_round,
                 total_i=args.proc_iters,
                 diff_seeds_for_rev=args.diff_seeds_for_rev, k=args.k,
-                active_learning=args.active_learning, 
+                active_learning=args.active_learning,
                 truth_for_active_learning=set(train_inds + dev_inds))
 
     print('----------------------------------')
@@ -522,44 +542,50 @@ def main(args):
 
 
 if __name__ == "__main__":
-    
+
     parser = argparse.ArgumentParser(description='LAP Experiments')
     parser.add_argument('--src-embs', metavar='PATH', required=True,
         help='Path to source embeddings.')
     parser.add_argument('--trg-embs', metavar='PATH', required=True,
         help='Path to target embeddings.')
-    parser.add_argument('--function', choices=['proc', 'sgm'], required=True, 
-        help='Which function to run (Procrustes (proc) or SGM (sgm) ).')
+    parser.add_argument('--outdir', metavar='PATH', help='Output directory.')
+    parser.add_argument('--function', choices=['proc', 'sgm', 'goat'], required=True,
+        help='Which function to run (Procrustes (proc), SGM (sgm), or GOAT ' +
+        '(goat ).')
+    parser.add_argument('--init', choices=['randomized', 'barycenter'],
+            default='randomized', help='P0 initialization for graph matching')
     parser.add_argument('--norm', metavar='N', choices=['noop', 'unit', 'center'],
-            nargs='+', required=True, 
+            nargs='+', required=True,
             help='How to normalize embeddings (can take multiple args)')
+    parser.add_argument('--no-selfloop', action='store_true',
+        help='Remove self-loops from word graphs.')
     parser.add_argument('--max-embs', type=int, default=200000,
         help='Maximum num of word embeddings to use.')
     parser.add_argument('--min-prob', type=float, default=0.0,
         help='The minimum probability to consider for softsgm')
-    parser.add_argument('--pairs', metavar='PATH', required=True, 
+    parser.add_argument('--pairs', metavar='PATH', required=True,
         help='train seeds + dev pairs')
     parser.add_argument('--n-seeds', type=int, required=True, help='Num train seeds to use')
-    parser.add_argument('--proc-iters', type=int, default=10, 
+    parser.add_argument('--proc-iters', type=int, default=10,
         help='Rounds of iterative Procrustes to run.')
-    parser.add_argument('--iterative-softsgm-iters', type=int, default=1, 
+    parser.add_argument('--iterative-softsgm-iters', type=int, default=1,
         help='Rounds of iterative SoftSGM to run.')
-    parser.add_argument('--softsgm-iters', type=int, default=1, 
+    parser.add_argument('--softsgm-iters', type=int, default=1,
         help='Rounds of SoftSGM to run to create probdist.')
-    parser.add_argument('--k', type=int, default=1, 
-        help='How many hypotheses to return per source word.') 
-    parser.add_argument('--randomize-seeds', action='store_true', 
+    parser.add_argument('--k', type=int, default=1,
+        help='How many hypotheses to return per source word.')
+    parser.add_argument('--randomize-seeds', action='store_true',
             help='If set, randomizes the seeds to use (instead of getting them in '
             'order from args.pairs file)')
     parser.add_argument('--new-nseeds-per-round', metavar='N', type=int, nargs='+',
             default=-1, help='Number of seeds to add per round in iterative runs.')
-    parser.add_argument('--diff-seeds-for-rev', action='store_true', 
+    parser.add_argument('--diff-seeds-for-rev', action='store_true',
         help='When running matching in reverse, regenerate seeds (if there are '
         'additional input seeds from a previous round, these will then be '
         'shuffled.')
-    parser.add_argument('--active-learning', action='store_true', 
+    parser.add_argument('--active-learning', action='store_true',
         help='Whether or not to do active learning')
-    
+
     args = parser.parse_args()
-    
+
     main(args)
